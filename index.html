@@ -31,6 +31,9 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+    .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+    .animate-fade-in-fast { animation: fade-in 0.2s ease-out forwards; }
     .tutorial-highlight-box {
         position: fixed;
         border-radius: 8px;
@@ -260,9 +263,9 @@
     };
 
     // --- from components/Tooltip.tsx ---
-    const Tooltip = ({ text, children }) => {
+    const Tooltip = ({ text, children, className }) => {
       return (
-        <div className="relative flex items-center group">
+        <div className={`relative flex items-center group ${className || ''}`}>
           {children}
           <div className="absolute bottom-full mb-2 w-max max-w-xs p-2 text-sm text-white bg-slate-700 rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10">
             {text}
@@ -470,6 +473,101 @@
     };
 
     // --- from components/InputForm.tsx ---
+    const ModelCaseSelector = ({ isOpen, onClose, onSelect, mode }) => {
+        if (!isOpen) return null;
+
+        const MODEL_CASES = {
+          contribution: [
+            { name: '堅実プラン', values: { monthlyInvestment: 3, annualYield: 3, targetAssets: 3000 }, description: 'リスクを抑え、コツコツと資産形成を目指すプランです。' },
+            { name: '標準プラン', values: { monthlyInvestment: 5, annualYield: 5, targetAssets: 5000 }, description: '平均的なリターンを狙い、バランスの取れた資産形成を目指します。' },
+            { name: '積極プラン', values: { monthlyInvestment: 10, annualYield: 7, targetAssets: 8000 }, description: 'リスクを取り、より大きなリターンを目指す上級者向けプランです。' },
+          ],
+          savingsRate: [
+            { name: '節約家プラン', values: { targetSavingsRate: 15, annualYield: 3, targetAssets: 4000 }, description: '無理なく始められる貯蓄率で、着実に資産を増やします。' },
+            { name: '標準プラン', values: { targetSavingsRate: 25, annualYield: 5, targetAssets: 6000 }, description: '収入の4分の1を投資に回し、効率的な資産拡大を目指します。' },
+            { name: 'てらぞん激推しプラン', values: { targetSavingsRate: 60, annualYield: 5, targetAssets: 5000 }, description: '倹約家に転身。収入が上がっても常に貯蓄率60％を目指し、副業やパートナーとの協力によって最短最速で資産5000万円を目指します。' },
+          ],
+          reverse: [
+            { name: 'サイドFIREプラン', values: { targetGoalAge: 55, goalSettingMode: 'fire', fireMonthlyLivingCost: 15, fireMonthlySideIncome: 5, fireWithdrawalRate: 4 }, description: '完全にリタイアせず、好きな仕事で少し働きながら生活するプランです。' },
+            { name: '完全リタイアプラン', values: { targetGoalAge: 60, goalSettingMode: 'fire', fireMonthlyLivingCost: 20, fireMonthlySideIncome: 0, fireWithdrawalRate: 4 }, description: '60歳で仕事から完全に引退し、悠々自適な生活を目指します。' },
+            { name: '億り人プラン', values: { targetGoalAge: 65, goalSettingMode: 'amount', targetAssets: 10000 }, description: '資産1億円という大きな目標を、長期的な視点で目指すプランです。' },
+          ],
+        };
+
+        const VALUE_LABELS = {
+          monthlyInvestment: { label: '毎月の積立額', unit: '万円' },
+          annualYield: { label: '想定利回り', unit: '%' },
+          targetAssets: { label: '目標資産額', unit: '万円' },
+          targetSavingsRate: { label: '目標貯蓄率', unit: '%' },
+          targetGoalAge: { label: '目標達成年齢', unit: '歳' },
+          goalSettingMode: { label: '目標の種類', unit: '' },
+          fireMonthlyLivingCost: { label: 'リタイア後の月間生活費', unit: '万円' },
+          fireMonthlySideIncome: { label: 'リタイア後の月間労働収入', unit: '万円' },
+          fireWithdrawalRate: { label: '資産の取り崩し率', unit: '%' },
+        };
+
+        const cases = MODEL_CASES[mode] || [];
+        const modeTitle = {
+            contribution: '「積立額から計算」モードのモデルケース',
+            savingsRate: '「貯蓄率から計算」モードのモデルケース',
+            reverse: '「目標から逆算」モードのモデルケース',
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 animate-fade-in-fast" onClick={onClose} aria-modal="true" role="dialog">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="p-6 sticky top-0 bg-white border-b z-10">
+                        <h3 className="text-xl font-bold text-slate-800">{modeTitle[mode]}</h3>
+                        <p className="text-sm text-slate-500 mt-1">プランを選択すると、入力欄にサンプル数値が自動でセットされます。</p>
+                        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors" aria-label="閉じる">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {cases.map(plan => (
+                            <div key={plan.name} className="bg-slate-50 border border-slate-200 rounded-lg p-5 flex flex-col hover:shadow-md hover:border-indigo-300 transition-all">
+                                <h4 className="font-bold text-lg text-indigo-600 mb-2">{plan.name}</h4>
+                                <p className="text-sm text-slate-600 flex-grow mb-4">{plan.description}</p>
+                                <div className="mb-4 pt-3 border-t border-slate-200">
+                                    <h5 className="text-xs font-bold text-slate-500 mb-2">設定される項目</h5>
+                                    <ul className="text-sm space-y-1 text-slate-700">
+                                        {Object.entries(plan.values).map(([key, value]) => {
+                                            const config = VALUE_LABELS[key];
+                                            if (!config) return null;
+
+                                            let displayValue = value;
+                                            let displayUnit = config.unit;
+                                            
+                                            if (key === 'goalSettingMode') {
+                                                displayValue = value === 'fire' ? 'FIREプラン' : '金額で指定';
+                                                displayUnit = '';
+                                            }
+
+                                            return (
+                                                <li key={key} className="flex justify-between items-baseline">
+                                                    <span className="text-xs">{config.label}</span>
+                                                    <span className="font-semibold text-right">{displayValue}
+                                                      <span className="text-xs ml-1">{displayUnit}</span>
+                                                    </span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                                <button 
+                                    onClick={() => onSelect(plan.values)} 
+                                    className="mt-auto w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150"
+                                >
+                                    この設定を適用
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const InputField = ({ label, name, value, onChange, unit, tooltip, min = 0, max, step = 0.01 }) => (
       <div>
         <label htmlFor={name} className="block text-sm font-medium text-slate-600 mb-1">
@@ -598,8 +696,15 @@
             </label>
         </div>
     );
-    const InputForm = ({ inputs, onInputChange, onReset, onAddEvent, onDeleteEvent, onEventChange, onModeChange, onGoalSettingModeChange }) => {
-      const { useMemo } = React;
+    const InputForm = ({ inputs, onInputChange, onSetInputs, onReset, onAddEvent, onDeleteEvent, onEventChange, onModeChange, onGoalSettingModeChange }) => {
+      const { useState, useMemo } = React;
+      const [isModelCaseModalOpen, setModelCaseModalOpen] = useState(false);
+      
+      const handleSelectModelCase = (values) => {
+        onSetInputs(prev => ({ ...prev, ...values }));
+        setModelCaseModalOpen(false);
+      };
+      
       const calculatedInvestment = useMemo(() => {
         if (inputs.simulationMode !== 'savingsRate') return 0;
         const income = Number(inputs.afterTaxMonthlyIncome) || 0;
@@ -652,8 +757,32 @@
         }, [inputs.lifeEvents, inputs.afterTaxMonthlyIncome, inputs.monthlyInvestment, inputs.targetSavingsRate, inputs.simulationMode]);
       
       const isReverseMode = inputs.simulationMode === 'reverse';
+      const ModelCaseButton = () => (
+        <div className="mt-6">
+          <Tooltip 
+            text="プランを選択すると、このモードに関連する項目が自動で入力されます。現在の入力値は上書きされますのでご注意ください。" 
+            className="w-full"
+          >
+            <button
+              type="button"
+              onClick={() => setModelCaseModalOpen(true)}
+              className="w-full py-2 px-4 bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition duration-150 flex items-center justify-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+              モデルケースから設定する
+            </button>
+          </Tooltip>
+        </div>
+      );
+      
       return (
         <div className="bg-white p-6 rounded-2xl shadow-lg">
+          <ModelCaseSelector
+            isOpen={isModelCaseModalOpen}
+            onClose={() => setModelCaseModalOpen(false)}
+            onSelect={handleSelectModelCase}
+            mode={inputs.simulationMode}
+          />
           <h2 className="text-xl font-bold text-slate-800 mb-6 border-b pb-3">シミュレーション条件</h2>
           <div className="space-y-5">
             <ModeSwitcher mode={inputs.simulationMode} onModeChange={onModeChange} />
@@ -667,6 +796,7 @@
                       <input type="range" name="monthlyInvestment" value={inputs.monthlyInvestment} onChange={onInputChange} min="0" max="100" step="0.1" className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer mt-2 accent-indigo-600" />
                   </div>
                   <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} />
+                  <ModelCaseButton />
                 </>)}
               {inputs.simulationMode === 'savingsRate' && (<>
                   <div className="space-y-5 p-4 bg-slate-50 rounded-lg">
@@ -678,6 +808,7 @@
                       </div>
                   </div>
                   <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} />
+                  <ModelCaseButton />
                 </>)}
               {inputs.simulationMode === 'reverse' && (<div className="space-y-5">
                     <InputField label="手取り月収" name="afterTaxMonthlyIncome" value={inputs.afterTaxMonthlyIncome} onChange={onInputChange} unit="万円" step={0.1} />
@@ -696,6 +827,7 @@
                             </div>
                           </div>)}
                     </div>
+                    <ModelCaseButton />
                 </div>)}
             </div>
           </div>
@@ -814,7 +946,7 @@
               <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
               <XAxis dataKey="age" tickFormatter={formatAge} tick={{ fill: '#64748b' }} minTickGap={20} />
               <YAxis tickFormatter={formatYen} tick={{ fill: '#64748b' }} width={80} domain={[0, topDomain]} ticks={yAxisTicks} allowDataOverflow={true} />
-              <RechartsTooltip formatter={(value, name) => [formatYen(value), name === 'totalAssets' ? '資産総額' : '積立元本']} labelFormatter={(label) => formatAge(label)} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(4px)', border: '1px solid #e2e8f0', borderRadius: '0.75rem' }} />
+              <RechartsTooltip formatter={(value, name) => [formatYen(value), name]} labelFormatter={(label) => formatAge(label)} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(4px)', border: '1px solid #e2e8f0', borderRadius: '0.75rem' }} />
               <Legend verticalAlign="top" height={36} />
               <Line type="monotone" dataKey="principal" stroke="#0ea5e9" strokeWidth={2} dot={false} name="積立元本" />
               <Line type="monotone" dataKey="totalAssets" stroke="#10b981" strokeWidth={3} dot={<EventMarker />} activeDot={{ r: 6 }} name="資産総額" />
@@ -1055,7 +1187,7 @@
           <main className="flex-grow container mx-auto p-4 md:p-8">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2">
-                <InputForm inputs={inputs} onInputChange={handleInputChange} onReset={handleReset} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onEventChange={handleEventChange} onModeChange={handleModeChange} onGoalSettingModeChange={handleGoalSettingModeChange} />
+                <InputForm inputs={inputs} onInputChange={handleInputChange} onSetInputs={setInputs} onReset={handleReset} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onEventChange={handleEventChange} onModeChange={handleModeChange} onGoalSettingModeChange={handleGoalSettingModeChange} />
               </div>
               <div className="lg:col-span-3 space-y-8">
                 <ResultsDisplay results={results} reverseResults={reverseResults} mode={inputs.simulationMode} />
