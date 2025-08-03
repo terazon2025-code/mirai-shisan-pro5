@@ -309,7 +309,11 @@
             
             const originalEventAges = new Set(sortedLifeEvents.map(e => Number(e.age)));
 
-            const monthlyRate = annualYield / 100 / 12;
+            // Handle APR for negative yields and EAR for positive yields for intuitive results
+            const monthlyRate = annualYield >= 0
+                ? Math.pow(1 + annualYield / 100, 1 / 12) - 1
+                : annualYield / 100 / 12; // For losses, APR is simpler and avoids NaN issues
+            
             let newAssets = currentAssets * 10000;
             let principal = currentAssets * 10000;
             
@@ -425,10 +429,23 @@
             if (!targetGoalAge || targetGoalAge <= currentAge || !afterTaxMonthlyIncome || effectiveTargetAssets <= 0) {
                  return { results: null, chartData: [], reverseResults: null };
             }
+
+            // First, check if goal is achievable with ZERO investment.
+            const simWithZero = runForwardSimulation(currentAge, currentAssets, 0, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
+            if (simWithZero.results?.isAchievable && simWithZero.results.goalAge <= targetGoalAge) {
+                const reverseResults = {
+                    requiredMonthlyInvestment: 0,
+                    requiredSavingsRate: 0,
+                    feedbackMessage: '現在の資産だけで目標達成可能です！',
+                    isAchievable: true,
+                };
+                return { ...simWithZero, reverseResults };
+            }
+
+            // If not, perform binary search for the required investment.
             let low = 0, high = afterTaxMonthlyIncome, requiredMonthlyInvestment = -1;
             for (let i = 0; i < 50; i++) {
                 const mid = (low + high) / 2;
-                if (mid < 0.001) break;
                 const sim = runForwardSimulation(currentAge, currentAssets, mid, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
                 if (sim.results?.isAchievable && sim.results.goalAge <= targetGoalAge) {
                     requiredMonthlyInvestment = mid;
@@ -443,8 +460,7 @@
             const finalSim = runForwardSimulation(currentAge, currentAssets, requiredMonthlyInvestment, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
             const requiredSavingsRate = afterTaxMonthlyIncome > 0 ? (requiredMonthlyInvestment / afterTaxMonthlyIncome) * 100 : 0;
             let feedbackMessage = '';
-            if (requiredMonthlyInvestment <= 0) feedbackMessage = '現在の資産だけで目標達成可能です！';
-            else if (requiredSavingsRate <= 25) feedbackMessage = '素晴らしい！現実的な目標です。この調子で頑張りましょう！';
+            if (requiredSavingsRate <= 25) feedbackMessage = '素晴らしい！現実的な目標です。この調子で頑張りましょう！';
             else if (requiredSavingsRate <= 40) feedbackMessage = '良い目標です！少し意識すれば達成可能でしょう。';
             else if (requiredSavingsRate <= 60) feedbackMessage = '挑戦的な目標です！家計の見直しや収入アップも視野に入れましょう。';
             else if (requiredSavingsRate <= 100) feedbackMessage = 'かなり高い目標です！副業やパートナーとの協力も検討しましょう。';
@@ -789,7 +805,7 @@
             <div id="tutorial-step-2" className="space-y-5 pt-4 border-t">
               <InputField label="現在の年齢" name="currentAge" value={inputs.currentAge} onChange={onInputChange} unit="歳" step={1} />
               <InputField label="現在の資産" name="currentAssets" value={inputs.currentAssets} onChange={onInputChange} unit="万円" step={1} />
-              <InputField label="想定利回り" name="annualYield" value={inputs.annualYield} onChange={onInputChange} unit="%" tooltip="1年間の投資で得られる利益の割合です。S&P500の平均リターンは年5~7%と言われています。" step={1} />
+              <InputField label="想定利回り" name="annualYield" value={inputs.annualYield} onChange={onInputChange} unit="%" tooltip="1年間の投資で得られる利益の割合です。このシミュレーターでは、入力された年利が1年後のリターンと一致するように、内部で月単位の複利計算を行っています。例えば年利5%と入力すると、1年後には資産がちょうど5%増加します。S&P500等の平均リターンは年5～7%が目安です。" step={1} />
               {inputs.simulationMode === 'contribution' && (<>
                   <div>
                      <InputField label="毎月の積立額" name="monthlyInvestment" value={inputs.monthlyInvestment} onChange={onInputChange} unit="万円" max={1000} step={0.1} />
