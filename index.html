@@ -471,6 +471,7 @@
               finalTotalAssets: Math.round(newAssets / 10000),
               totalPrincipal: Math.round(principal / 10000),
               totalInterest: Math.round((newAssets - principal) / 10000),
+              finalAge,
             };
 
             return { results, chartData: data };
@@ -588,7 +589,7 @@
             let requiredMonthlyInvestment = 0;
             let isAchievable = true;
 
-            if (handsOffResults && handsOffResults.goalAge <= targetGoalAge) {
+            if (handsOffResults && handsOffResults.finalAge <= targetGoalAge) {
                 requiredMonthlyInvestment = 0;
             } else {
                 let low = 0, high = effectiveTargetAssets, foundInvestment = -1;
@@ -596,7 +597,7 @@
                     const mid = low + (high - low) / 2;
                     if (mid < 0.01) { low = mid; continue; }
                     const sim = runForwardSimulation(currentAge, currentAssets, mid, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
-                    if (sim.results?.isAchievable && sim.results.goalAge <= targetGoalAge) {
+                    if (sim.results?.isAchievable && sim.results.finalAge <= targetGoalAge) {
                         foundInvestment = mid;
                         high = mid;
                     } else {
@@ -1120,7 +1121,7 @@
             )
       }
 
-      const showHandsOffCard = mode === 'reverse' && reverseResults?.handsOff && reverseResults.handsOff.goalAge <= (Number(inputs.targetGoalAge) || 0);
+      const showHandsOffCard = mode === 'reverse' && reverseResults?.handsOff && reverseResults.handsOff.finalAge <= (Number(inputs.targetGoalAge) || 0);
 
       return (
         <div id="tutorial-step-3" className="bg-slate-100 p-6 rounded-2xl shadow-inner">
