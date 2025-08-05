@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -85,6 +86,80 @@
     // ====================================================================================
     //  All components and logic are now embedded here to avoid external file issues.
     // ====================================================================================
+
+    const validateInputs = (inputs) => {
+        const errors = {};
+        const {
+            simulationMode, currentAge, currentAssets, annualYield,
+            monthlyInvestment, targetAssets, afterTaxMonthlyIncome,
+            targetSavingsRate, targetGoalAge, goalSettingMode,
+            fireMonthlyLivingCost, fireMonthlySideIncome, fireWithdrawalRate,
+        } = inputs;
+
+        const numCurrentAge = Number(currentAge);
+        const numCurrentAssets = Number(currentAssets);
+        const numTargetAssets = Number(targetAssets);
+
+        // Common validations
+        if (currentAge === '' || numCurrentAge <= 0 || !Number.isInteger(numCurrentAge)) {
+            errors.currentAge = '1歳以上の整数で入力してください。';
+        }
+        if (currentAssets === '' || numCurrentAssets < 0) {
+            errors.currentAssets = '0万円以上で入力してください。';
+        }
+        if (annualYield === '') {
+            errors.annualYield = '数値を入力してください。';
+        }
+
+        // Mode-specific validations
+        if (simulationMode === 'contribution' || simulationMode === 'savingsRate') {
+            if (!targetAssets || numTargetAssets <= 0) {
+                errors.targetAssets = '0より大きい値を入力してください。';
+            } else if (numTargetAssets <= numCurrentAssets) {
+                errors.targetAssets = '目標額は現在の資産より大きい値を入力してください。';
+            }
+        }
+        
+        if (simulationMode === 'contribution') {
+            if (monthlyInvestment === '' || Number(monthlyInvestment) < 0) {
+                errors.monthlyInvestment = '0円以上で入力してください。';
+            }
+        } else if (simulationMode === 'savingsRate') {
+            if (afterTaxMonthlyIncome === '' || Number(afterTaxMonthlyIncome) < 0) {
+                errors.afterTaxMonthlyIncome = '0円以上で入力してください。';
+            }
+            const numRate = Number(targetSavingsRate);
+            if (targetSavingsRate === '' || numRate < 0 || numRate > 100) {
+                errors.targetSavingsRate = '0～100%で入力してください。';
+            }
+        } else if (simulationMode === 'reverse') {
+            if (afterTaxMonthlyIncome === '' || Number(afterTaxMonthlyIncome) < 0) {
+                errors.afterTaxMonthlyIncome = '0円以上で入力してください。';
+            }
+            const numTargetGoalAge = Number(targetGoalAge);
+            if (!targetGoalAge || numTargetGoalAge <= numCurrentAge) {
+                errors.targetGoalAge = '目標年齢は現在より未来に設定してください。';
+            }
+            
+            if (goalSettingMode === 'amount') {
+                if (!targetAssets || numTargetAssets <= numCurrentAssets) {
+                    errors.targetAssets = '目標額は現在の資産より大きい値を入力してください。';
+                }
+            } else { // fire
+                if (fireMonthlyLivingCost === '' || Number(fireMonthlyLivingCost) < 0) {
+                    errors.fireMonthlyLivingCost = '0円以上で入力してください。';
+                }
+                if (fireMonthlySideIncome === '' || Number(fireMonthlySideIncome) < 0) {
+                    errors.fireMonthlySideIncome = '0円以上で入力してください。';
+                }
+                if (!fireWithdrawalRate || Number(fireWithdrawalRate) <= 0) {
+                    errors.fireWithdrawalRate = '0より大きい値を入力してください。';
+                }
+            }
+        }
+        
+        return errors;
+    };
     
     // --- from components/Tutorial.tsx ---
     const TUTORIAL_STEPS = [
@@ -155,15 +230,17 @@
         
         // Effect to robustly lock and unlock page scrolling
         useEffect(() => {
+            if (!isOpen) return; // Do nothing if the tutorial is not open
+
+            // Save original styles when the tutorial opens
             const originalBodyOverflow = document.body.style.overflow;
             const originalDocElementOverflow = document.documentElement.style.overflow;
-            if (isOpen) {
-                document.body.style.overflow = 'hidden';
-                document.documentElement.style.overflow = 'hidden';
-            } else {
-                document.body.style.overflow = originalBodyOverflow;
-                document.documentElement.style.overflow = originalDocElementOverflow;
-            }
+            
+            // Lock scrolling
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
+
+            // Return cleanup function to restore original styles on close/unmount
             return () => {
                 document.body.style.overflow = originalBodyOverflow;
                 document.documentElement.style.overflow = originalDocElementOverflow;
@@ -309,10 +386,9 @@
             
             const originalEventAges = new Set(sortedLifeEvents.map(e => Number(e.age)));
 
-            // Handle APR for negative yields and EAR for positive yields for intuitive results
             const monthlyRate = annualYield >= 0
                 ? Math.pow(1 + annualYield / 100, 1 / 12) - 1
-                : annualYield / 100 / 12; // For losses, APR is simpler and avoids NaN issues
+                : annualYield / 100 / 12;
             
             let newAssets = currentAssets * 10000;
             let principal = currentAssets * 10000;
@@ -346,20 +422,17 @@
               if (lifeEventsMap.has(currentAgeInYears)) {
                   const event = lifeEventsMap.get(currentAgeInYears);
                   if (event) {
-                      const newIncome = Number(event.newMonthlyIncome);
-                      if (newIncome > 0) {
-                          currentMonthlyIncome = newIncome;
+                      // Correctly handle income update: update if a valid number (including 0) is provided.
+                      if (event.newMonthlyIncome !== '' && !isNaN(Number(event.newMonthlyIncome))) {
+                          currentMonthlyIncome = Number(event.newMonthlyIncome);
                       }
+
+                      // Calculate new investment based on the potentially updated income
                       if (event.goalType === 'rate') {
-                          const newRate = Number(event.goalValue);
-                          if (newRate >= 0) {
-                              currentMonthlyInvestment = (currentMonthlyIncome * newRate) / 100;
-                          }
-                      } else {
-                          const newAmount = Number(event.goalValue);
-                          if (newAmount >= 0) {
-                              currentMonthlyInvestment = newAmount;
-                          }
+                          const newRate = Number(event.goalValue) || 0;
+                          currentMonthlyInvestment = (currentMonthlyIncome * newRate) / 100;
+                      } else { // 'amount'
+                          currentMonthlyInvestment = Number(event.goalValue) || 0;
                       }
                       lifeEventsMap.delete(currentAgeInYears);
                   }
@@ -403,7 +476,62 @@
             return { results, chartData: data };
         }
 
+        const runSimulationForDuration = (
+            currentAge, currentAssets, monthlyInvestment, annualYield, durationInYears,
+            lifeEvents, initialMonthlyIncome
+        ) => {
+            const monthlyRate = annualYield >= 0
+                ? Math.pow(1 + annualYield / 100, 1 / 12) - 1
+                : annualYield / 100 / 12;
+            let newAssets = currentAssets * 10000;
+            let principal = currentAssets * 10000;
+            const totalMonths = Math.max(0, Math.round(durationInYears * 12));
+            const data = [{
+                age: currentAge,
+                totalAssets: Math.round(newAssets / 10000),
+                principal: Math.round(principal / 10000),
+            }];
+
+            let months = 0;
+            let lastAge = currentAge;
+            while (months < totalMonths) {
+                months++;
+                const monthlyInvestAmount = monthlyInvestment * 10000;
+                const interest = newAssets * monthlyRate;
+                newAssets += interest;
+                if (monthlyInvestAmount > 0) {
+                    newAssets += monthlyInvestAmount;
+                    principal += monthlyInvestAmount;
+                }
+                const currentAgeInYears = Math.floor(currentAge + (months - 1) / 12);
+                if (currentAgeInYears > lastAge) {
+                    data.push({
+                        age: currentAgeInYears,
+                        totalAssets: Math.round(newAssets / 10000),
+                        principal: Math.round(principal / 10000),
+                    });
+                    lastAge = currentAgeInYears;
+                }
+            }
+            data.push({
+                age: Number((currentAge + durationInYears).toFixed(2)),
+                totalAssets: Math.round(newAssets / 10000),
+                principal: Math.round(principal / 10000),
+            });
+            const results = {
+                finalTotalAssets: Math.round(newAssets / 10000),
+                totalPrincipal: Math.round(principal / 10000),
+                totalInterest: Math.round((newAssets - principal) / 10000),
+            };
+            return { results, chartData: data };
+        };
+
+
       return useMemo(() => {
+        if (!inputs || Object.values(inputs).some(v => v === '')) {
+            return { results: null, chartData: [], reverseResults: null };
+        }
+
         const currentAge = Number(inputs.currentAge) || 0;
         const currentAssets = Number(inputs.currentAssets) || 0;
         const annualYield = Math.round(Number(inputs.annualYield) || 0);
@@ -426,52 +554,109 @@
 
         if (inputs.simulationMode === 'reverse') {
             const targetGoalAge = Number(inputs.targetGoalAge) || 0;
-            if (!targetGoalAge || targetGoalAge <= currentAge || !afterTaxMonthlyIncome || effectiveTargetAssets <= 0) {
-                 return { results: null, chartData: [], reverseResults: null };
-            }
-
-            // First, check if goal is achievable with ZERO investment.
-            const simWithZero = runForwardSimulation(currentAge, currentAssets, 0, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
-            if (simWithZero.results?.isAchievable && simWithZero.results.goalAge <= targetGoalAge) {
-                const reverseResults = {
-                    requiredMonthlyInvestment: 0,
-                    requiredSavingsRate: 0,
-                    feedbackMessage: '現在の資産だけで目標達成可能です！',
-                    isAchievable: true,
+            
+            if (effectiveTargetAssets <= currentAssets) {
+                return {
+                    results: null,
+                    chartData: [],
+                    reverseResults: {
+                        isAchievable: true,
+                        feedbackMessage: 'おめでとうございます！すでに目標資産額を達成しています。',
+                        requiredMonthlyInvestment: 0,
+                        requiredSavingsRate: 0,
+                        handsOff: null,
+                    },
                 };
-                return { ...simWithZero, reverseResults };
+            }
+            if (targetGoalAge <= currentAge) {
+                return {
+                    results: null,
+                    chartData: [],
+                    reverseResults: {
+                        isAchievable: false,
+                        feedbackMessage: '目標達成年齢は、現在の年齢より未来の年齢を設定してください。',
+                        handsOff: null,
+                    },
+                };
             }
 
-            // If not, perform binary search for the required investment.
-            let low = 0, high = afterTaxMonthlyIncome, requiredMonthlyInvestment = -1;
-            for (let i = 0; i < 50; i++) {
-                const mid = (low + high) / 2;
-                const sim = runForwardSimulation(currentAge, currentAssets, mid, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
-                if (sim.results?.isAchievable && sim.results.goalAge <= targetGoalAge) {
-                    requiredMonthlyInvestment = mid;
-                    high = mid;
-                } else {
-                    low = mid;
+            // Plan A: Calculate "Hands-off Plan" (zero additional investment)
+            const handsOffSim = runForwardSimulation(currentAge, currentAssets, 0, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
+            const handsOffResults = handsOffSim.results?.isAchievable ? handsOffSim.results : null;
+
+            // Plan B: Calculate required investment for user's "Goal Achievement Plan"
+            let requiredMonthlyInvestment = 0;
+            let isAchievable = true;
+
+            if (handsOffResults && handsOffResults.goalAge <= targetGoalAge) {
+                requiredMonthlyInvestment = 0;
+            } else {
+                let low = 0, high = effectiveTargetAssets, foundInvestment = -1;
+                for (let i = 0; i < 100; i++) {
+                    const mid = low + (high - low) / 2;
+                    if (mid < 0.01) { low = mid; continue; }
+                    const sim = runForwardSimulation(currentAge, currentAssets, mid, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
+                    if (sim.results?.isAchievable && sim.results.goalAge <= targetGoalAge) {
+                        foundInvestment = mid;
+                        high = mid;
+                    } else {
+                        low = mid;
+                    }
+                    if (high - low < 0.01) break;
                 }
+                if (foundInvestment === -1) isAchievable = false;
+                else requiredMonthlyInvestment = foundInvestment;
             }
-            if (requiredMonthlyInvestment === -1) {
-                 return { results: null, chartData: [], reverseResults: { feedbackMessage: 'この目標は現実的ではありません。目標年齢を延ばすか、目標額・FIREプランを調整してください。', isAchievable: false } };
+
+            if (!isAchievable) {
+                 return { results: null, chartData: [], reverseResults: { feedbackMessage: 'この目標は現実的ではありません。目標年齢を延ばすか、目標額・FIREプランを調整してください。', isAchievable: false, handsOff: handsOffResults } };
             }
-            const finalSim = runForwardSimulation(currentAge, currentAssets, requiredMonthlyInvestment, annualYield, effectiveTargetAssets, [], afterTaxMonthlyIncome);
-            const requiredSavingsRate = afterTaxMonthlyIncome > 0 ? (requiredMonthlyInvestment / afterTaxMonthlyIncome) * 100 : 0;
+            
+            const durationYears = targetGoalAge - currentAge;
+            const { results: finalState, chartData } = runSimulationForDuration(currentAge, currentAssets, requiredMonthlyInvestment, annualYield, durationYears, [], afterTaxMonthlyIncome);
+
+            const requiredSavingsRate = afterTaxMonthlyIncome > 0 ? (requiredMonthlyInvestment / afterTaxMonthlyIncome) * 100 : (requiredMonthlyInvestment > 0 ? Infinity : 0);
+            
             let feedbackMessage = '';
-            if (requiredSavingsRate <= 25) feedbackMessage = '素晴らしい！現実的な目標です。この調子で頑張りましょう！';
-            else if (requiredSavingsRate <= 40) feedbackMessage = '良い目標です！少し意識すれば達成可能でしょう。';
-            else if (requiredSavingsRate <= 60) feedbackMessage = '挑戦的な目標です！家計の見直しや収入アップも視野に入れましょう。';
-            else if (requiredSavingsRate <= 100) feedbackMessage = 'かなり高い目標です！副業やパートナーとの協力も検討しましょう。';
-            else feedbackMessage = '達成困難な目標です。収入を大幅に増やす必要があります。';
-            const reverseResults = {
+            if (requiredMonthlyInvestment <= 0) {
+                feedbackMessage = '追加の積立は不要です。現在の資産と利回りだけで目標を達成できる見込みです。';
+            } else if (afterTaxMonthlyIncome <= 0) {
+                feedbackMessage = '目標達成にはまず収入を確保することが最優先です。収入を増やす方法を考えましょう！';
+            } else if (requiredSavingsRate <= 25) {
+                feedbackMessage = '素晴らしい！現実的な目標です。この調子で頑張りましょう！';
+            } else if (requiredSavingsRate <= 40) {
+                feedbackMessage = '良い目標です！少し意識すれば達成可能でしょう。';
+            } else if (requiredSavingsRate <= 60) {
+                feedbackMessage = '挑戦的な目標です！家計の見直しや収入アップも視野に入れましょう。';
+            } else if (requiredSavingsRate <= 100) {
+                feedbackMessage = 'かなり高い目標です！副業やパートナーとの協力も検討しましょう。';
+            } else {
+                feedbackMessage = '達成困難な目標です。収入を大幅に増やす必要があります。';
+            }
+
+            const yearsToGoal = Math.floor(durationYears);
+            const monthsToGoal = Math.round((durationYears - yearsToGoal) * 12);
+
+            const resultsForDisplay = {
+                isAchievable: true,
+                goalAge: targetGoalAge,
+                goalAgeMonthsPart: 0,
+                yearsToGoal: yearsToGoal,
+                monthsToGoal: monthsToGoal,
+                finalTotalAssets: finalState.finalTotalAssets,
+                totalPrincipal: finalState.totalPrincipal,
+                totalInterest: finalState.totalInterest,
+            };
+
+            const reverseResultsForDisplay = {
                 requiredMonthlyInvestment: Number(requiredMonthlyInvestment.toFixed(1)),
-                requiredSavingsRate: Number(requiredSavingsRate.toFixed(1)),
+                requiredSavingsRate: isFinite(requiredSavingsRate) ? Number(requiredSavingsRate.toFixed(1)) : Infinity,
                 feedbackMessage,
                 isAchievable: true,
+                handsOff: handsOffResults,
             };
-            return { ...finalSim, reverseResults };
+
+            return { results: resultsForDisplay, chartData, reverseResults: reverseResultsForDisplay };
         }
 
         const initialMonthlyIncome = Number(inputs.afterTaxMonthlyIncome) || 0;
@@ -584,7 +769,7 @@
         );
     };
 
-    const InputField = ({ label, name, value, onChange, unit, tooltip, min = 0, max, step = 0.01 }) => (
+    const InputField = ({ label, name, value, onChange, unit, tooltip, min = 0, max, step = 0.01, error }) => (
       <div>
         <label htmlFor={name} className="block text-sm font-medium text-slate-600 mb-1">
           {label}
@@ -600,24 +785,39 @@
             min={min} max={max} step={step} placeholder="入力してください"
             onWheel={(e) => e.currentTarget.blur()}
             onKeyDown={(e) => { if (['e', 'E', '+', '-'].includes(e.key)) e.preventDefault(); }}
-            className={`w-full pl-3 pr-12 py-2 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition bg-white text-slate-900 ${value === '' ? 'placeholder:text-red-400' : ''}`}
+            className={`w-full pl-3 pr-12 py-2 border rounded-lg shadow-sm focus:ring-2 transition bg-white text-slate-900 ${error ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-slate-300 focus:ring-indigo-500 focus:border-indigo-500'}`}
+            aria-invalid={!!error}
+            aria-describedby={error ? `${name}-error` : undefined}
           />
           <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">{unit}</span>
         </div>
+        {error && <p id={`${name}-error`} className="mt-1 text-xs text-red-600 animate-fade-in" role="alert">{error}</p>}
       </div>
     );
     const LifeEventCard = ({ event, onChange, onDelete, beforeIncome, beforeInvestment, beforeRate }) => {
         const { useMemo } = React;
+        
+        const effectiveIncome = useMemo(() => {
+             // Use new income if it's a valid number (including 0), otherwise use the income before this event.
+             return (event.newMonthlyIncome !== '' && !isNaN(Number(event.newMonthlyIncome)))
+                ? Number(event.newMonthlyIncome) 
+                : beforeIncome;
+        }, [event.newMonthlyIncome, beforeIncome]);
+
         const calculatedRate = useMemo(() => {
-            const income = Number(event.newMonthlyIncome) || beforeIncome;
-            if (event.goalType === 'amount' && income > 0) return Number(((Number(event.goalValue) || 0) / income * 100).toFixed(1));
+            if (event.goalType === 'amount' && effectiveIncome > 0) {
+                 return Number(((Number(event.goalValue) || 0) / effectiveIncome * 100).toFixed(1));
+            }
             return null;
-        }, [event.goalType, event.goalValue, event.newMonthlyIncome, beforeIncome]);
+        }, [event.goalType, event.goalValue, effectiveIncome]);
+
         const calculatedAmount = useMemo(() => {
-            const income = Number(event.newMonthlyIncome) || beforeIncome;
-            if (event.goalType === 'rate') return Number((income * (Number(event.goalValue) || 0) / 100).toFixed(1));
+            if (event.goalType === 'rate') {
+                return Number((effectiveIncome * (Number(event.goalValue) || 0) / 100).toFixed(1));
+            }
             return null;
-        }, [event.goalType, event.goalValue, event.newMonthlyIncome, beforeIncome]);
+        }, [event.goalType, event.goalValue, effectiveIncome]);
+
         return (
             <details className="bg-slate-100 p-3 rounded-lg animate-fade-in group border border-slate-200" open>
                 <summary className="flex justify-between items-center font-semibold text-slate-700 cursor-pointer">
@@ -712,7 +912,7 @@
             </label>
         </div>
     );
-    const InputForm = ({ inputs, onInputChange, onSetInputs, onReset, onAddEvent, onDeleteEvent, onEventChange, onModeChange, onGoalSettingModeChange }) => {
+    const InputForm = ({ inputs, onInputChange, onSetInputs, onReset, onAddEvent, onDeleteEvent, onEventChange, onModeChange, onGoalSettingModeChange, errors }) => {
       const { useState, useMemo } = React;
       const [isModelCaseModalOpen, setModelCaseModalOpen] = useState(false);
       
@@ -761,7 +961,9 @@
                   rate: Number(currentRate.toFixed(1))
                 });
                 const eventIncome = Number(event.newMonthlyIncome);
-                if (eventIncome > 0) currentIncome = eventIncome;
+                if (event.newMonthlyIncome !== '' && !isNaN(eventIncome)) {
+                     currentIncome = eventIncome;
+                }
                 
                 if (event.goalType === 'rate') {
                     currentInvestment = Number(((currentIncome * (Number(event.goalValue) || 0)) / 100).toFixed(1));
@@ -803,40 +1005,40 @@
           <div className="space-y-5">
             <ModeSwitcher mode={inputs.simulationMode} onModeChange={onModeChange} />
             <div id="tutorial-step-2" className="space-y-5 pt-4 border-t">
-              <InputField label="現在の年齢" name="currentAge" value={inputs.currentAge} onChange={onInputChange} unit="歳" step={1} />
-              <InputField label="現在の資産" name="currentAssets" value={inputs.currentAssets} onChange={onInputChange} unit="万円" step={1} />
-              <InputField label="想定利回り" name="annualYield" value={inputs.annualYield} onChange={onInputChange} unit="%" tooltip="1年間の投資で得られる利益の割合です。このシミュレーターでは、入力された年利が1年後のリターンと一致するように、内部で月単位の複利計算を行っています。例えば年利5%と入力すると、1年後には資産がちょうど5%増加します。S&P500等の平均リターンは年5～7%が目安です。" step={1} />
+              <InputField label="現在の年齢" name="currentAge" value={inputs.currentAge} onChange={onInputChange} unit="歳" step={1} error={errors.currentAge} />
+              <InputField label="現在の資産" name="currentAssets" value={inputs.currentAssets} onChange={onInputChange} unit="万円" step={1} error={errors.currentAssets} />
+              <InputField label="想定利回り" name="annualYield" value={inputs.annualYield} onChange={onInputChange} unit="%" tooltip="1年間の投資で得られる利益の割合です。このシミュレーターでは、入力された年利が1年後のリターンと一致するように、内部で月単位の複利計算を行っています。例えば年利5%と入力すると、1年後には資産がちょうど5%増加します。S&P500等の平均リターンは年5～7%が目安です。" step={1} error={errors.annualYield} />
               {inputs.simulationMode === 'contribution' && (<>
                   <div>
-                     <InputField label="毎月の積立額" name="monthlyInvestment" value={inputs.monthlyInvestment} onChange={onInputChange} unit="万円" max={1000} step={0.1} />
+                     <InputField label="毎月の積立額" name="monthlyInvestment" value={inputs.monthlyInvestment} onChange={onInputChange} unit="万円" max={1000} step={0.1} error={errors.monthlyInvestment} />
                       <input type="range" name="monthlyInvestment" value={inputs.monthlyInvestment} onChange={onInputChange} min="0" max="100" step="0.1" className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer mt-2 accent-indigo-600" />
                   </div>
-                  <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} />
+                  <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} error={errors.targetAssets} />
                   <ModelCaseButton />
                 </>)}
               {inputs.simulationMode === 'savingsRate' && (<>
                   <div className="space-y-5 p-4 bg-slate-50 rounded-lg">
-                      <InputField label="手取り月収" name="afterTaxMonthlyIncome" value={inputs.afterTaxMonthlyIncome} onChange={onInputChange} unit="万円" step={0.1} />
-                      <InputField label="目標貯蓄率" name="targetSavingsRate" value={inputs.targetSavingsRate} onChange={onInputChange} unit="%" max={100} step={0.1} />
+                      <InputField label="手取り月収" name="afterTaxMonthlyIncome" value={inputs.afterTaxMonthlyIncome} onChange={onInputChange} unit="万円" step={0.1} error={errors.afterTaxMonthlyIncome} />
+                      <InputField label="目標貯蓄率" name="targetSavingsRate" value={inputs.targetSavingsRate} onChange={onInputChange} unit="%" max={100} step={0.1} error={errors.targetSavingsRate} />
                       <div className="text-center border-t pt-3">
                           <p className="text-sm text-slate-600">毎月の積立額（自動計算）</p>
                           <p className="text-2xl font-bold text-indigo-600">{calculatedInvestment.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 万円</p>
                       </div>
                   </div>
-                  <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} />
+                  <InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} error={errors.targetAssets} />
                   <ModelCaseButton />
                 </>)}
               {inputs.simulationMode === 'reverse' && (<div className="space-y-5">
-                    <InputField label="手取り月収" name="afterTaxMonthlyIncome" value={inputs.afterTaxMonthlyIncome} onChange={onInputChange} unit="万円" step={0.1} />
-                    <InputField label="目標達成年齢" name="targetGoalAge" value={inputs.targetGoalAge} onChange={onInputChange} unit="歳" step={1} />
+                    <InputField label="手取り月収" name="afterTaxMonthlyIncome" value={inputs.afterTaxMonthlyIncome} onChange={onInputChange} unit="万円" step={0.1} error={errors.afterTaxMonthlyIncome} />
+                    <InputField label="目標達成年齢" name="targetGoalAge" value={inputs.targetGoalAge} onChange={onInputChange} unit="歳" step={1} error={errors.targetGoalAge} />
                     <div className="border-t pt-4 space-y-4">
                       <label className="block text-sm font-medium text-slate-600 text-center">▼ どんなゴールを目指しますか？</label>
                       <GoalSettingSwitcher mode={inputs.goalSettingMode} onModeChange={onGoalSettingModeChange} />
-                      {inputs.goalSettingMode === 'amount' && (<InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} />)}
+                      {inputs.goalSettingMode === 'amount' && (<InputField label="目標資産額" name="targetAssets" value={inputs.targetAssets} onChange={onInputChange} unit="万円" step={1} error={errors.targetAssets} />)}
                       {inputs.goalSettingMode === 'fire' && (<div className="space-y-5 p-4 bg-slate-50 rounded-lg animate-fade-in">
-                            <InputField label="リタイア後の月間生活費" name="fireMonthlyLivingCost" value={inputs.fireMonthlyLivingCost} onChange={onInputChange} unit="万円" tooltip="FIRE後に毎月必要になるであろう生活費を入力してください。" step={0.1} />
-                            <InputField label="リタイア後の月間労働収入" name="fireMonthlySideIncome" value={inputs.fireMonthlySideIncome} onChange={onInputChange} unit="万円" tooltip="サイドFIREなどで見込む、リタイア後の労働収入です。なければ0を入力してください。" step={0.1} />
-                            <InputField label="資産の取り崩し率" name="fireWithdrawalRate" value={inputs.fireWithdrawalRate} onChange={onInputChange} unit="%" tooltip="資産を毎年何%ずつ使っていくか。一般的に4%が目安とされます。" step={0.1} />
+                            <InputField label="リタイア後の月間生活費" name="fireMonthlyLivingCost" value={inputs.fireMonthlyLivingCost} onChange={onInputChange} unit="万円" tooltip="FIRE後に毎月必要になるであろう生活費を入力してください。" step={0.1} error={errors.fireMonthlyLivingCost} />
+                            <InputField label="リタイア後の月間労働収入" name="fireMonthlySideIncome" value={inputs.fireMonthlySideIncome} onChange={onInputChange} unit="万円" tooltip="サイドFIREなどで見込む、リタイア後の労働収入です。なければ0を入力してください。" step={0.1} error={errors.fireMonthlySideIncome} />
+                            <InputField label="資産の取り崩し率" name="fireWithdrawalRate" value={inputs.fireWithdrawalRate} onChange={onInputChange} unit="%" tooltip="資産を毎年何%ずつ使っていくか。一般的に4%が目安とされます。" step={0.1} error={errors.fireWithdrawalRate} />
                             <div className="text-center border-t pt-3">
                                 <p className="text-sm text-slate-600">そのために必要な目標資産額（自動計算）</p>
                                 <p className="text-2xl font-bold text-indigo-600">{calculatedFireTargetAssets.toLocaleString()} 万円</p>
@@ -868,35 +1070,48 @@
             <div className="text-2xl lg:text-3xl font-bold text-slate-800">{children}</div>
         </div>
     );
+    const HandsOffInfoCard = ({ results }) => (
+        <div className="sm:col-span-2 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-800 p-4 rounded-xl shadow-md animate-fade-in">
+            <h3 className="font-bold text-lg mb-2">【朗報！】ほったらかしでも達成可能です</h3>
+            <p>追加の積立をしなくても、あなたの資産は <strong className="text-2xl font-bold">{results.goalAge}歳 {results.goalAgeMonthsPart}ヶ月</strong> で目標達成できる見込みです！</p>
+        </div>
+    );
     const ReverseResultCard = ({ reverseResults }) => {
-        const rateColor = reverseResults.requiredSavingsRate > 50 ? 'text-red-500' : reverseResults.requiredSavingsRate > 35 ? 'text-amber-500' : 'text-emerald-500';
         if (!reverseResults.isAchievable) {
             return (<div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-xl shadow-md sm:col-span-2"><p className="font-bold">目標達成は困難です</p><p>{reverseResults.feedbackMessage}</p></div>)
         }
+        
+        const rateColor = reverseResults.requiredSavingsRate > 50 ? 'text-red-500' : reverseResults.requiredSavingsRate > 35 ? 'text-amber-500' : 'text-emerald-500';
+
         return (
             <div className="bg-indigo-50 border-l-4 border-indigo-500 text-indigo-800 p-4 rounded-xl shadow-md sm:col-span-2">
                 <h3 className="font-bold text-lg mb-2">目標達成のための試算結果</h3>
                 <p>あなたの目標を達成するには、毎月 <strong className={`text-2xl font-bold ${rateColor}`}>{reverseResults.requiredMonthlyInvestment.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 万円</strong> の積立が必要です。</p>
-                <p className="mt-1">これは手取り月収に対し、<strong className={`text-2xl font-bold ${rateColor}`}>{reverseResults.requiredSavingsRate.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong> の貯蓄率に相当します。</p>
+                {isFinite(reverseResults.requiredSavingsRate) ? (
+                    <p className="mt-1">これは手取り月収に対し、<strong className={`text-2xl font-bold ${rateColor}`}>{reverseResults.requiredSavingsRate.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong> の貯蓄率に相当します。</p>
+                ) : (
+                    <p className="mt-1">現在の収入が0円のため、貯蓄率は計算できません。</p>
+                )}
                 <p className="mt-3 text-sm bg-indigo-100 p-2 rounded-md">{reverseResults.feedbackMessage}</p>
             </div>
         );
     };
-    const ResultsDisplay = ({ results, reverseResults, mode }) => {
+    const ResultsDisplay = ({ results, reverseResults, mode, inputs, isValid }) => {
       const formatYen = (amount) => new Intl.NumberFormat('ja-JP').format(amount) + '万円';
 
-      // 初期状態または必須項目不足で計算できない場合
+      if (!isValid) {
+          return (<div id="tutorial-step-3" className="flex flex-col items-center justify-center min-h-[10rem] bg-red-50 p-6 rounded-2xl shadow-inner text-red-700 text-center"><p className="font-bold text-lg">入力エラー</p><p className="mt-2">シミュレーション条件の入力にエラーがあります。メッセージに従って値を修正してください。</p></div>);
+      }
+      
       if (!results && !reverseResults) {
         return (<div id="tutorial-step-3" className="flex items-center justify-center min-h-[10rem] bg-slate-100 p-6 rounded-2xl shadow-inner text-slate-500">条件を入力してシミュレーションを開始してください。</div>);
       }
       
-      // 前方シミュレーション（積立額・貯蓄率モード）で100年以内に達成不可能な場合
       if (results && !results.isAchievable) {
         return (<div id="tutorial-step-3" className="flex items-center justify-center min-h-[10rem] bg-amber-50 p-6 rounded-2xl shadow-inner text-amber-700">現在の設定では100年以内に目標を達成できません。積立額を増やすか、目標を調整してください。</div>);
       }
 
-      // 逆算モードで達成不可能な場合（このとき `results` は null）
-      if (!results) {
+      if (!results) { // This now only catches the unachievable case in reverse mode.
            return (
               <div id="tutorial-step-3" className="bg-slate-100 p-6 rounded-2xl shadow-inner space-y-4">
                   <h2 className="text-xl font-bold text-slate-800 mb-2 border-b pb-3">シミュレーション結果</h2>
@@ -905,18 +1120,23 @@
             )
       }
 
-      // 達成可能な場合の表示（前方・逆算モード共通）
+      const showHandsOffCard = mode === 'reverse' && reverseResults?.handsOff && reverseResults.handsOff.goalAge <= (Number(inputs.targetGoalAge) || 0);
+
       return (
         <div id="tutorial-step-3" className="bg-slate-100 p-6 rounded-2xl shadow-inner">
           <h2 className="text-xl font-bold text-slate-800 mb-6 border-b pb-3">シミュレーション結果</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {showHandsOffCard && <HandsOffInfoCard results={reverseResults.handsOff} />}
               {mode === 'reverse' && reverseResults && <ReverseResultCard reverseResults={reverseResults} />}
+              
               <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg flex flex-col items-center justify-center text-center sm:col-span-2">
                 <h3 className="text-base font-semibold text-indigo-200 mb-1">目標達成年齢</h3>
                 <p className="text-4xl lg:text-5xl font-extrabold">{results.goalAge}歳 <span className="text-2xl lg:text-3xl font-semibold">{results.goalAgeMonthsPart}ヶ月</span></p>
               </div>
+              
               <ResultCard title="達成まであと">{results.yearsToGoal}年 {results.monthsToGoal}ヶ月</ResultCard>
               <ResultCard title="最終資産額">{formatYen(results.finalTotalAssets)}</ResultCard>
+              
                <div className="bg-white p-4 rounded-xl shadow-md flex flex-col items-center justify-center text-center sm:col-span-2">
                     <div className="w-full">
                         <div className="flex justify-between text-sm text-slate-600 mb-1"><span>積立元本</span><span>運用利益</span></div>
@@ -976,21 +1196,36 @@
     const ShareModule = ({ results, chartData }) => {
         const { useState, useCallback } = React;
         const [isGenerating, setIsGenerating] = useState(false);
+        const [imageDataUrl, setImageDataUrl] = useState(null); // 画像データURLを保持するState
+
         const getTimestamp = () => new Date().toISOString().replace(/[-:.]/g, "").replace("T", "_").slice(0,15);
+        
         const handleDownloadImage = useCallback(async () => {
             const chartElement = document.getElementById('tutorial-step-4');
             if (chartElement && !isGenerating) {
                 setIsGenerating(true);
                 try {
                     const canvas = await html2canvas(chartElement, { backgroundColor: '#ffffff', scale: 2 });
-                    const link = document.createElement('a');
-                    link.href = canvas.toDataURL('image/png');
-                    link.download = 'asset-simulation-chart.png';
-                    link.click();
-                } catch (error) { console.error('Error generating image:', error); alert('画像の生成に失敗しました。'); }
+                    const isMobile = window.innerWidth < 768; // モバイル判定
+
+                    if (isMobile) {
+                        // モバイルの場合はモーダルで画像を表示
+                        setImageDataUrl(canvas.toDataURL('image/png'));
+                    } else {
+                        // PCの場合は直接ダウンロード
+                        const link = document.createElement('a');
+                        link.href = canvas.toDataURL('image/png');
+                        link.download = 'asset-simulation-chart.png';
+                        link.click();
+                    }
+                } catch (error) { 
+                    console.error('Error generating image:', error); 
+                    alert('画像の生成に失敗しました。'); 
+                }
                 finally { setIsGenerating(false); }
             }
         }, [isGenerating]);
+
         const handleDownloadCsv = useCallback(() => {
             if (!chartData || chartData.length <= 1) return alert('CSVエクスポート用のデータがありません。');
             const headers = ['年齢(歳)', '年初資産額(万円)', '年間積立額(万円)', '年間運用益(万円)', '年末資産額(万円)'];
@@ -1013,11 +1248,46 @@
         }, [chartData]);
 
         if (!results || !results.isAchievable) return null;
+
+        const closeImageModal = () => setImageDataUrl(null);
+
         return (
-            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-                <button onClick={handleDownloadImage} disabled={isGenerating} className="w-full sm:w-auto flex items-center justify-center py-2 px-6 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition duration-150 disabled:bg-slate-400"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>{isGenerating ? '生成中...' : 'グラフを画像で保存'}</button>
-                <button onClick={handleDownloadCsv} disabled={!chartData || chartData.length <= 1} className="w-full sm:w-auto flex items-center justify-center py-2 px-6 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition duration-150 disabled:bg-sky-300"><svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>詳細データをダウンロード</button>
-            </div>
+            <>
+                <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+                    <button onClick={handleDownloadImage} disabled={isGenerating} className="w-full sm:w-auto flex items-center justify-center py-2 px-6 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition duration-150 disabled:bg-slate-400"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>{isGenerating ? '生成中...' : 'グラフを画像で保存'}</button>
+                    <button onClick={handleDownloadCsv} disabled={!chartData || chartData.length <= 1} className="w-full sm:w-auto flex items-center justify-center py-2 px-6 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition duration-150 disabled:bg-sky-300"><svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>詳細データをダウンロード</button>
+                </div>
+                
+                {/* 画像表示用モーダル */}
+                {imageDataUrl && (
+                    <div 
+                        className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4 animate-fade-in-fast" 
+                        onClick={closeImageModal} 
+                        aria-modal="true" 
+                        role="dialog"
+                    >
+                        <div 
+                            className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-4 sm:p-6 relative flex flex-col" 
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <h3 className="text-lg font-bold text-center text-slate-800 mb-2">生成された画像</h3>
+                            <p className="text-center text-sm text-slate-600 mb-4">
+                                画像を長押し（PCでは右クリック）して保存してください。
+                            </p>
+                            <div className="bg-slate-100 p-2 rounded-lg border">
+                                <img src={imageDataUrl} alt="資産推移グラフ" className="w-full h-auto rounded-md" />
+                            </div>
+                            <button 
+                                onClick={closeImageModal} 
+                                className="mt-4 w-full py-2 px-4 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition"
+                                aria-label="閉じる"
+                            >
+                                閉じる
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </>
         );
     };
     
@@ -1066,9 +1336,16 @@
         } catch (error) { console.error("Failed to parse state", error); }
         return INITIAL_STATE;
       });
+      const [errors, setErrors] = useState({});
       const [showTutorial, setShowTutorial] = useState(false);
 
-      const { results, chartData, reverseResults } = useSimulation(inputs);
+      useEffect(() => {
+        const newErrors = validateInputs(inputs);
+        setErrors(newErrors);
+      }, [inputs]);
+      
+      const isValid = Object.keys(errors).length === 0;
+      const { results, chartData, reverseResults } = useSimulation(isValid ? inputs : null);
 
       useEffect(() => {
         const tutorialSeen = localStorage.getItem(TUTORIAL_SEEN_KEY);
@@ -1130,10 +1407,6 @@
                 }
             }
             
-            // NOTE: The problematic logic that overwrites user input on mode switch
-            // between 'contribution' and 'savingsRate' has been removed.
-            // User inputs are now preserved independently.
-            
             return newInputs;
         });
       }, []);
@@ -1146,7 +1419,7 @@
             const lastEvent = sortedEvents.length > 0 ? sortedEvents[sortedEvents.length - 1] : null;
             let lastIncome, lastInvestment;
             if (lastEvent) {
-                lastIncome = Number(lastEvent.newMonthlyIncome) || Number(prev.afterTaxMonthlyIncome);
+                lastIncome = (lastEvent.newMonthlyIncome !== '' && !isNaN(Number(lastEvent.newMonthlyIncome))) ? Number(lastEvent.newMonthlyIncome) : Number(prev.afterTaxMonthlyIncome);
                 lastInvestment = lastEvent.goalType === 'rate' ? (lastIncome * (Number(lastEvent.goalValue) || 0)) / 100 : Number(lastEvent.goalValue) || 0;
             } else {
                 lastIncome = Number(prev.afterTaxMonthlyIncome);
@@ -1203,12 +1476,12 @@
           <main className="flex-grow container mx-auto p-4 md:p-8">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2">
-                <InputForm inputs={inputs} onInputChange={handleInputChange} onSetInputs={setInputs} onReset={handleReset} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onEventChange={handleEventChange} onModeChange={handleModeChange} onGoalSettingModeChange={handleGoalSettingModeChange} />
+                <InputForm inputs={inputs} errors={errors} onInputChange={handleInputChange} onSetInputs={setInputs} onReset={handleReset} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onEventChange={handleEventChange} onModeChange={handleModeChange} onGoalSettingModeChange={handleGoalSettingModeChange} />
               </div>
               <div className="lg:col-span-3 space-y-8">
-                <ResultsDisplay results={results} reverseResults={reverseResults} mode={inputs.simulationMode} />
-                <AssetChart data={chartData} />
-                <ShareModule results={results} chartData={chartData} />
+                <ResultsDisplay results={results} reverseResults={reverseResults} mode={inputs.simulationMode} inputs={inputs} isValid={isValid} />
+                <AssetChart data={isValid ? chartData : []} />
+                <ShareModule results={isValid ? results : null} chartData={isValid ? chartData : []} />
               </div>
             </div>
           </main>
