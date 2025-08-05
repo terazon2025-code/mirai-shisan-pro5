@@ -528,7 +528,7 @@
 
 
       return useMemo(() => {
-        if (!inputs || Object.values(inputs).some(v => v === '')) {
+        if (!inputs) {
             return { results: null, chartData: [], reverseResults: null };
         }
 
