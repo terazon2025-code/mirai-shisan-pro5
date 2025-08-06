@@ -276,7 +276,7 @@
         };
         const handlePrev = () => {
             if (currentStep > 0) {
-                setCurrentStep(prev => prev - 1);
+                setCurrentStep(prev => prev + 1);
             }
         };
         const handleClose = () => onClose(dontShowAgain);
@@ -492,13 +492,6 @@
             let lastAge = currentAge;
             while (months < totalMonths) {
                 months++;
-                const monthlyInvestAmount = monthlyInvestment * 10000;
-                const interest = newAssets * monthlyRate;
-                newAssets += interest;
-                if (monthlyInvestAmount > 0) {
-                    newAssets += monthlyInvestAmount;
-                    principal += monthlyInvestAmount;
-                }
                 const currentAgeInYears = Math.floor(currentAge + (months - 1) / 12);
                 if (currentAgeInYears > lastAge) {
                     data.push({
@@ -507,6 +500,14 @@
                         principal: Math.round(principal / 10000),
                     });
                     lastAge = currentAgeInYears;
+                }
+                
+                const monthlyInvestAmount = monthlyInvestment * 10000;
+                const interest = newAssets * monthlyRate;
+                newAssets += interest;
+                if (monthlyInvestAmount > 0) {
+                    newAssets += monthlyInvestAmount;
+                    principal += monthlyInvestAmount;
                 }
             }
             data.push({
@@ -1189,10 +1190,10 @@
     };
 
     // --- from components/ShareModule.tsx ---
-    const ShareModule = ({ results, chartData }) => {
+    const ShareModule = ({ results, chartData, inputs, reverseResults }) => {
         const { useState, useCallback } = React;
         const [isGenerating, setIsGenerating] = useState(false);
-        const [imageDataUrl, setImageDataUrl] = useState(null); // 画像データURLを保持するState
+        const [imageDataUrl, setImageDataUrl] = useState(null);
 
         const getTimestamp = () => new Date().toISOString().replace(/[-:.]/g, "").replace("T", "_").slice(0,15);
         
@@ -1202,13 +1203,11 @@
                 setIsGenerating(true);
                 try {
                     const canvas = await html2canvas(chartElement, { backgroundColor: '#ffffff', scale: 2 });
-                    const isMobile = window.innerWidth < 768; // モバイル判定
+                    const isMobile = window.innerWidth < 768;
 
                     if (isMobile) {
-                        // モバイルの場合はモーダルで画像を表示
                         setImageDataUrl(canvas.toDataURL('image/png'));
                     } else {
-                        // PCの場合は直接ダウンロード
                         const link = document.createElement('a');
                         link.href = canvas.toDataURL('image/png');
                         link.download = 'asset-simulation-chart.png';
@@ -1224,6 +1223,68 @@
 
         const handleDownloadCsv = useCallback(() => {
             if (!chartData || chartData.length <= 1) return alert('CSVエクスポート用のデータがありません。');
+            
+            const getModeLabel = (mode) => ({
+                contribution: '積立額から計算',
+                savingsRate: '貯蓄率から計算',
+                reverse: '目標から逆算',
+            }[mode] || '不明');
+            
+            const calculatedFireTarget = () => {
+                 if (inputs.simulationMode !== 'reverse' || inputs.goalSettingMode !== 'fire') return 0;
+                 const livingCost = Number(inputs.fireMonthlyLivingCost) || 0;
+                 const sideIncome = Number(inputs.fireMonthlySideIncome) || 0;
+                 const withdrawalRate = Number(inputs.fireWithdrawalRate) || 0;
+                 if (withdrawalRate <= 0) return 0;
+                 const requiredAnnualSpending = (livingCost - sideIncome) * 12;
+                 if (requiredAnnualSpending <= 0) return 0;
+                 return Math.round(requiredAnnualSpending / (withdrawalRate / 100));
+            };
+
+            const metadata = [
+                `# ■■■ シミュレーション条件 (${new Date().toLocaleString('ja-JP')}) ■■■`,
+                `# モード: ${getModeLabel(inputs.simulationMode)}`,
+                `#`,
+                `# --- 基本情報 ---`,
+                `# 現在の年齢: ${inputs.currentAge} 歳`,
+                `# 現在の資産: ${inputs.currentAssets} 万円`,
+                `# 想定利回り: ${inputs.annualYield} %`,
+            ];
+
+            if (inputs.simulationMode === 'contribution') {
+                metadata.push(`#`, `# --- 目標設定 ---`);
+                metadata.push(`# 毎月の積立額: ${inputs.monthlyInvestment} 万円`);
+                metadata.push(`# 目標資産額: ${inputs.targetAssets} 万円`);
+            } else if (inputs.simulationMode === 'savingsRate') {
+                metadata.push(`#`, `# --- 目標設定 ---`);
+                metadata.push(`# 手取り月収: ${inputs.afterTaxMonthlyIncome} 万円`);
+                metadata.push(`# 目標貯蓄率: ${inputs.targetSavingsRate} %`);
+                metadata.push(`# 目標資産額: ${inputs.targetAssets} 万円`);
+            } else if (inputs.simulationMode === 'reverse') {
+                metadata.push(`#`, `# --- 目標設定 ---`);
+                metadata.push(`# 手取り月収: ${inputs.afterTaxMonthlyIncome} 万円`);
+                metadata.push(`# 目標達成年齢: ${inputs.targetGoalAge} 歳`);
+                if (inputs.goalSettingMode === 'amount') {
+                    metadata.push(`# 目標資産額: ${inputs.targetAssets} 万円`);
+                } else { // fire
+                    metadata.push(`# FIREプラン:`);
+                    metadata.push(`#   リタイア後の月間生活費: ${inputs.fireMonthlyLivingCost} 万円`);
+                    metadata.push(`#   リタイア後の月間労働収入: ${inputs.fireMonthlySideIncome} 万円`);
+                    metadata.push(`#   資産の取り崩し率: ${inputs.fireWithdrawalRate} %`);
+                    metadata.push(`#   (自動計算)目標資産額: ${calculatedFireTarget()} 万円`);
+                }
+                if (reverseResults?.isAchievable) {
+                     metadata.push(`#`, `# --- 試算結果 ---`);
+                     metadata.push(`# 算出された必要積立額(月): ${reverseResults.requiredMonthlyInvestment} 万円`);
+                }
+            }
+            if(inputs.lifeEvents.length > 0) {
+                metadata.push(`#`, `# --- ライフイベント ---`);
+                inputs.lifeEvents.forEach((event, i) => {
+                     metadata.push(`#   イベント ${i+1}: ${event.age}歳から ${event.goalType === 'amount' ? `積立額を${event.goalValue}万円` : `貯蓄率を${event.goalValue}%`}に変更`);
+                });
+            }
+
             const headers = ['年齢(歳)', '年初資産額(万円)', '年間積立額(万円)', '年間運用益(万円)', '年末資産額(万円)'];
             const rows = chartData.slice(1).map((item, index) => {
                 const prevItem = chartData[index];
@@ -1234,14 +1295,18 @@
                 const annualInterest = endOfYearAssets - startOfYearAssets - annualContribution;
                 return [age, startOfYearAssets, annualContribution, annualInterest, endOfYearAssets].join(',');
             });
-            const csvContent = [headers.join(','), ...rows].join('\n');
+            
+            const csvContent = [...metadata, `\n# ■■■ 詳細データ ■■■`, headers.join(','), ...rows].join('\n');
             const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `asset_simulation_${getTimestamp()}.csv`;
+            
+            const modeName = getModeLabel(inputs.simulationMode);
+            link.download = `asset_simulation_${modeName}_${getTimestamp()}.csv`;
+            
             link.click();
             URL.revokeObjectURL(link.href);
-        }, [chartData]);
+        }, [chartData, inputs, reverseResults]);
 
         if (!results || !results.isAchievable) return null;
 
@@ -1477,7 +1542,7 @@
               <div className="lg:col-span-3 space-y-8">
                 <ResultsDisplay results={results} reverseResults={reverseResults} mode={inputs.simulationMode} inputs={inputs} isValid={isValid} />
                 <AssetChart data={isValid ? chartData : []} />
-                <ShareModule results={isValid ? results : null} chartData={isValid ? chartData : []} />
+                <ShareModule results={isValid ? results : null} chartData={isValid ? chartData : []} inputs={inputs} reverseResults={reverseResults} />
               </div>
             </div>
           </main>
