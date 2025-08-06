@@ -228,22 +228,37 @@
 
         }, [currentStep, isMobile]);
         
-        // Effect to robustly lock and unlock page scrolling
+        // Effect for robust scroll locking, especially on mobile
         useEffect(() => {
-            if (!isOpen) return; // Do nothing if the tutorial is not open
+            if (!isOpen) {
+                return;
+            }
 
-            // Save original styles when the tutorial opens
-            const originalBodyOverflow = document.body.style.overflow;
-            const originalDocElementOverflow = document.documentElement.style.overflow;
+            const body = document.body;
+            const scrollY = window.scrollY;
+
+            // Save original styles to restore them later
+            const originalPosition = body.style.position;
+            const originalTop = body.style.top;
+            const originalWidth = body.style.width;
+            const originalOverflow = body.style.overflow;
+
+            // Apply scroll-locking styles
+            body.style.position = 'fixed';
+            body.style.top = `-${scrollY}px`;
+            body.style.width = '100%';
+            body.style.overflow = 'hidden';
             
-            // Lock scrolling
-            document.body.style.overflow = 'hidden';
-            document.documentElement.style.overflow = 'hidden';
-
-            // Return cleanup function to restore original styles on close/unmount
+            // Cleanup function to run when the component unmounts or `isOpen` becomes false
             return () => {
-                document.body.style.overflow = originalBodyOverflow;
-                document.documentElement.style.overflow = originalDocElementOverflow;
+                // Restore the original styles
+                body.style.position = originalPosition;
+                body.style.top = originalTop;
+                body.style.width = originalWidth;
+                body.style.overflow = originalOverflow;
+                
+                // Jump back to the original scroll position
+                window.scrollTo(0, scrollY);
             };
         }, [isOpen]);
 
