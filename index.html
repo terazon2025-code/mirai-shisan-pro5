@@ -40,13 +40,13 @@
         border-radius: 8px;
         box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
         z-index: 9998;
-        transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease;
+        transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
         pointer-events: none;
     }
     .tutorial-popover {
         position: fixed;
         z-index: 9999;
-        transition: top 0.3s ease, left 0.3s ease;
+        transition: top 0.3s ease, left 0.3s ease, bottom 0.3s ease, opacity 0.3s ease;
     }
   </style>
   
@@ -175,126 +175,84 @@
         const [highlightStyle, setHighlightStyle] = useState({ opacity: 0 });
         const [popoverStyle, setPopoverStyle] = useState({ opacity: 0 });
         const [dontShowAgain, setDontShowAgain] = useState(false);
-        const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
         const popoverRef = useRef(null);
+        const originalScrollY = useRef(0);
 
-        const updateLayout = useCallback(() => {
-            setIsMobile(window.innerWidth < 768);
+        const positionTutorial = useCallback(() => {
             const step = TUTORIAL_STEPS[currentStep];
             const element = document.getElementById(step.elementId);
 
-            if (!element) {
+            if (element) {
+                const scrollYToCenter = element.offsetTop + (element.offsetHeight / 2) - (window.innerHeight / 2);
+                const docHeight = document.documentElement.scrollHeight;
+                const winHeight = window.innerHeight;
+                const clampedScrollY = Math.max(0, Math.min(scrollYToCenter, docHeight - winHeight));
+                
+                document.body.style.top = `-${clampedScrollY}px`;
+
+                const rect = element.getBoundingClientRect();
+                setHighlightStyle({
+                    top: `${rect.top - 5}px`,
+                    left: `${rect.left - 5}px`,
+                    width: `${rect.width + 10}px`,
+                    height: `${rect.height + 10}px`,
+                    opacity: 1,
+                });
+                
+                setTimeout(() => {
+                    if (popoverRef.current) {
+                        const popoverRect = popoverRef.current.getBoundingClientRect();
+                        let newPopoverStyle = {};
+                        if (window.innerWidth < 768) {
+                            newPopoverStyle = { bottom: '20px', left: '20px', right: '20px', top: 'auto' };
+                        } else {
+                            const positions = {
+                                top: { top: rect.top - popoverRect.height - 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
+                                bottom: { top: rect.bottom + 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
+                                left: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.left - popoverRect.width - 15 },
+                                right: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.right + 15 },
+                            };
+                            const pos = positions[step.position] || positions.bottom;
+                            pos.left = Math.max(10, Math.min(pos.left, window.innerWidth - popoverRect.width - 10));
+                            pos.top = Math.max(10, Math.min(pos.top, window.innerHeight - popoverRect.height - 10));
+                            newPopoverStyle = { top: `${pos.top}px`, left: `${pos.left}px` };
+                        }
+                        setPopoverStyle({ ...newPopoverStyle, opacity: 1 });
+                    }
+                }, 0);
+            } else {
                 setHighlightStyle({ opacity: 0 });
-                setPopoverStyle({ opacity: 0 });
-                return;
+                setPopoverStyle({ ...popoverStyle, opacity: 0 });
             }
+        }, [currentStep]);
 
-            const rect = element.getBoundingClientRect();
-            setHighlightStyle({
-                top: `${rect.top - 5}px`,
-                left: `${rect.left - 5}px`,
-                width: `${rect.width + 10}px`,
-                height: `${rect.height + 10}px`,
-                opacity: 1,
-            });
-            
-            if (popoverRef.current) {
-                const popoverRect = popoverRef.current.getBoundingClientRect();
-                let newPopoverStyle = {};
-
-                if (window.innerWidth < 768) { // Mobile view
-                    newPopoverStyle = {
-                        bottom: '20px',
-                        left: '20px',
-                        right: '20px',
-                        top: 'auto',
-                        opacity: 1,
-                    };
-                } else { // Desktop view
-                    const positions = {
-                        top: { top: rect.top - popoverRect.height - 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
-                        bottom: { top: rect.bottom + 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
-                        left: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.left - popoverRect.width - 15 },
-                        right: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.right + 15 },
-                    };
-                    const pos = positions[step.position] || positions.bottom;
-                    // Prevent going off-screen
-                    pos.left = Math.max(10, Math.min(pos.left, window.innerWidth - popoverRect.width - 10));
-                    pos.top = Math.max(10, Math.min(pos.top, window.innerHeight - popoverRect.height - 10));
-                    newPopoverStyle = { top: `${pos.top}px`, left: `${pos.left}px`, opacity: 1 };
-                }
-                setPopoverStyle(newPopoverStyle);
-            }
-
-        }, [currentStep, isMobile]);
-        
-        // Effect for robust scroll locking, especially on mobile
         useEffect(() => {
-            if (!isOpen) {
-                return;
-            }
-
+            if (!isOpen) return;
             const body = document.body;
-            const scrollY = window.scrollY;
-
-            // Save original styles to restore them later
-            const originalPosition = body.style.position;
-            const originalTop = body.style.top;
-            const originalWidth = body.style.width;
-            const originalOverflow = body.style.overflow;
-
-            // Apply scroll-locking styles
+            originalScrollY.current = window.scrollY;
+            const { position, top, width, overflow } = body.style;
             body.style.position = 'fixed';
-            body.style.top = `-${scrollY}px`;
             body.style.width = '100%';
             body.style.overflow = 'hidden';
-            
-            // Cleanup function to run when the component unmounts or `isOpen` becomes false
+            body.style.top = `-${originalScrollY.current}px`;
             return () => {
-                // Restore the original styles
-                body.style.position = originalPosition;
-                body.style.top = originalTop;
-                body.style.width = originalWidth;
-                body.style.overflow = originalOverflow;
-                
-                // Jump back to the original scroll position
-                window.scrollTo(0, scrollY);
+                body.style.position = position;
+                body.style.top = top;
+                body.style.width = width;
+                body.style.overflow = overflow;
+                window.scrollTo(0, originalScrollY.current);
             };
         }, [isOpen]);
 
-        // Effect to position the highlight and popover
         useEffect(() => {
             if (!isOpen) return;
-
-            const step = TUTORIAL_STEPS[currentStep];
-            const element = document.getElementById(step.elementId);
-            
-            const handleResize = () => updateLayout();
-            window.addEventListener('resize', handleResize);
-
-            if (element) {
-                // Scroll instantly to avoid race conditions with smooth scrolling.
-                // The CSS transition on the highlight box provides a smooth visual effect.
-                element.scrollIntoView({ behavior: 'auto', block: 'center' });
-
-                // A short delay ensures the browser has repainted after the scroll,
-                // so getBoundingClientRect() returns the correct, final position.
-                const layoutTimer = setTimeout(() => {
-                    updateLayout();
-                }, 50);
-
-                return () => {
-                    clearTimeout(layoutTimer);
-                    window.removeEventListener('resize', handleResize);
-                };
-            } else {
-                // If element not found, hide highlights
-                updateLayout();
-                 return () => {
-                    window.removeEventListener('resize', handleResize);
-                };
-            }
-        }, [isOpen, currentStep, updateLayout]);
+            const timer = setTimeout(positionTutorial, 50);
+            window.addEventListener('resize', positionTutorial);
+            return () => {
+                clearTimeout(timer);
+                window.removeEventListener('resize', positionTutorial);
+            };
+        }, [isOpen, currentStep, positionTutorial]);
 
 
         const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
