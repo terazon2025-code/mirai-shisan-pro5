@@ -40,13 +40,14 @@
         border-radius: 8px;
         box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
         z-index: 9998;
-        transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+        transition: top 0.1s linear, left 0.1s linear, width 0.1s linear, height 0.1s linear, opacity 0.3s ease;
         pointer-events: none;
     }
     .tutorial-popover {
         position: fixed;
         z-index: 9999;
         transition: top 0.3s ease, left 0.3s ease, bottom 0.3s ease, opacity 0.3s ease;
+        pointer-events: auto;
     }
   </style>
   
@@ -176,148 +177,107 @@
         const [popoverStyle, setPopoverStyle] = useState({ opacity: 0 });
         const [dontShowAgain, setDontShowAgain] = useState(false);
         const popoverRef = useRef(null);
-        const originalBodyStyle = useRef(null); // <-- FIX: Initialize with null
-        const transitionTimer = useRef(null);
-        const isInitialPositioningRef = useRef(true);
 
-        const positionTutorial = useCallback((isInitial = false) => {
+        const updatePositions = useCallback(() => {
             const step = TUTORIAL_STEPS[currentStep];
-            if (!step) return;
+            if (!isOpen || !step) return;
+
             const element = document.getElementById(step.elementId);
-            if (!element) return;
+            if (!element || !document.body.contains(element)) {
+                setHighlightStyle(s => ({ ...s, opacity: 0, pointerEvents: 'none' }));
+                setPopoverStyle(s => ({ ...s, opacity: 0, pointerEvents: 'none' }));
+                return;
+            }
 
-            clearTimeout(transitionTimer.current);
+            const rect = element.getBoundingClientRect();
+            const isVisible = rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
 
-            const updatePositions = () => {
-                const rect = element.getBoundingClientRect();
-                setHighlightStyle({
-                    top: `${rect.top - 5}px`,
-                    left: `${rect.left - 5}px`,
-                    width: `${rect.width + 10}px`,
-                    height: `${rect.height + 10}px`,
-                    opacity: 1,
-                });
+            setHighlightStyle({
+                top: `${rect.top - 5}px`,
+                left: `${rect.left - 5}px`,
+                width: `${rect.width + 10}px`,
+                height: `${rect.height + 10}px`,
+                opacity: isVisible ? 1 : 0,
+            });
 
-                setTimeout(() => {
-                    if (!popoverRef.current) return;
-                    const popoverRect = popoverRef.current.getBoundingClientRect();
-                    let newPopoverStyle = {};
+            setTimeout(() => {
+                if (!popoverRef.current) return;
+                const popoverRect = popoverRef.current.getBoundingClientRect();
+                let newPopoverStyle = {};
 
-                    if (window.innerWidth < 768) {
-                        newPopoverStyle = { bottom: '20px', left: '20px', right: '20px', top: 'auto' };
-                    } else {
-                        const positions = {
-                            top: { top: rect.top - popoverRect.height - 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
-                            bottom: { top: rect.bottom + 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
-                            left: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.left - popoverRect.width - 15 },
-                            right: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.right + 15 },
-                        };
-                        const pos = positions[step.position] || positions.bottom;
-                        pos.left = Math.max(10, Math.min(pos.left, window.innerWidth - popoverRect.width - 10));
-                        pos.top = Math.max(10, Math.min(pos.top, window.innerHeight - popoverRect.height - 10));
-                        newPopoverStyle = { top: `${pos.top}px`, left: `${pos.left}px` };
-                    }
-                    setPopoverStyle({ ...newPopoverStyle, opacity: 1 });
-                }, 0);
-            };
-
-            const body = document.body;
-            const currentBodyTop = parseFloat(body.style.top || '0');
-            const currentScroll = -currentBodyTop;
-            const elementTopInDocument = currentScroll + element.getBoundingClientRect().top;
-            const targetScrollY = elementTopInDocument - (window.innerHeight / 2) + (element.offsetHeight / 2);
-            const docHeight = document.documentElement.scrollHeight;
-            const clampedScrollY = Math.max(0, Math.min(targetScrollY, docHeight - window.innerHeight));
-
-            const transitionDuration = isInitial ? 0 : 400;
-            body.style.transition = `top ${transitionDuration}ms ease-in-out`;
-            body.style.top = `-${clampedScrollY}px`;
-
-            transitionTimer.current = setTimeout(updatePositions, transitionDuration);
-
-        }, [currentStep]);
+                if (window.innerWidth < 768) {
+                    newPopoverStyle = { bottom: '20px', left: '20px', right: '20px', top: 'auto' };
+                } else {
+                    const positions = {
+                        top: { top: rect.top - popoverRect.height - 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
+                        bottom: { top: rect.bottom + 15, left: rect.left + rect.width / 2 - popoverRect.width / 2 },
+                        left: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.left - popoverRect.width - 15 },
+                        right: { top: rect.top + rect.height / 2 - popoverRect.height / 2, left: rect.right + 15 },
+                    };
+                    const pos = positions[step.position] || positions.bottom;
+                    pos.left = Math.max(10, Math.min(pos.left, window.innerWidth - popoverRect.width - 10));
+                    pos.top = Math.max(10, Math.min(pos.top, window.innerHeight - popoverRect.height - 10));
+                    newPopoverStyle = { top: `${pos.top}px`, left: `${pos.left}px` };
+                }
+                setPopoverStyle({ ...newPopoverStyle, opacity: 1 });
+            }, 10);
+        }, [currentStep, isOpen]);
         
-        const handleResize = useCallback(() => positionTutorial(true), [positionTutorial]);
+        useEffect(() => {
+            if (!isOpen) {
+                setHighlightStyle({ opacity: 0 });
+                setPopoverStyle({ opacity: 0 });
+                return;
+            }
+
+            let timeoutId;
+            const debouncedUpdate = () => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(updatePositions, 10);
+            };
+            
+            window.addEventListener('scroll', debouncedUpdate, { passive: true });
+            window.addEventListener('resize', debouncedUpdate);
+
+            debouncedUpdate();
+
+            return () => {
+                window.removeEventListener('scroll', debouncedUpdate);
+                window.removeEventListener('resize', debouncedUpdate);
+                clearTimeout(timeoutId);
+            };
+        }, [isOpen, updatePositions]);
 
         useEffect(() => {
             if (isOpen) {
-                isInitialPositioningRef.current = true;
-                const body = document.body;
-                
-                // --- FIX START ---
-                // Only lock scroll and save styles if it hasn't been done already.
-                // This prevents overwriting original styles when the effect re-runs due to step changes.
-                if (originalBodyStyle.current === null) {
-                    const scrollY = window.scrollY;
+                const isFirstStep = currentStep === 0;
+                setPopoverStyle(s => ({ ...s, opacity: 0 }));
 
-                    originalBodyStyle.current = {
-                        position: body.style.position,
-                        top: body.style.top,
-                        width: body.style.width,
-                        overflow: body.style.overflow,
-                        transition: body.style.transition,
-                    };
-
-                    body.style.position = 'fixed';
-                    body.style.width = '100%';
-                    body.style.overflow = 'hidden';
-                    body.style.top = `-${scrollY}px`;
-                }
-                // --- FIX END ---
-                
-                const timer = setTimeout(() => {
-                    positionTutorial(true);
-                    isInitialPositioningRef.current = false;
-                }, 50);
-                window.addEventListener('resize', handleResize);
-                
-                return () => {
-                    clearTimeout(timer);
-                    clearTimeout(transitionTimer.current);
-                    window.removeEventListener('resize', handleResize);
-                };
-
-            } else {
-                // --- FIX START ---
-                // Only restore styles if they were saved (i.e., tutorial was open).
-                if (originalBodyStyle.current) {
-                    const body = document.body;
-                    const scrollY = -parseFloat(body.style.top || '0');
-
-                    body.style.position = originalBodyStyle.current.position || '';
-                    body.style.top = originalBodyStyle.current.top || '';
-                    body.style.width = originalBodyStyle.current.width || '';
-                    body.style.overflow = originalBodyStyle.current.overflow || '';
-                    body.style.transition = originalBodyStyle.current.transition || '';
-                    
-                    if (!isNaN(scrollY)) {
-                        window.scrollTo(0, scrollY);
+                setTimeout(() => {
+                    const step = TUTORIAL_STEPS[currentStep];
+                    if (!step) return;
+                    const element = document.getElementById(step.elementId);
+                    if (element) {
+                        element.scrollIntoView({
+                            behavior: isFirstStep ? 'auto' : 'smooth',
+                            block: 'center',
+                            inline: 'nearest'
+                        });
                     }
-                    
-                    // Reset the ref for the next time the tutorial opens.
-                    originalBodyStyle.current = null;
-                }
-                // --- FIX END ---
-                isInitialPositioningRef.current = true;
+                }, 50);
             }
-        }, [isOpen, handleResize, positionTutorial]);
-
-        useEffect(() => {
-            if (isOpen && !isInitialPositioningRef.current) {
-                positionTutorial(false);
-            }
-        }, [currentStep, isOpen, positionTutorial]);
+        }, [currentStep, isOpen]);
 
 
         const handleNext = () => {
-            if (currentStep >= TUTORIAL_STEPS.length - 1) return;
-            setPopoverStyle(s => ({ ...s, opacity: 0 }));
-            setCurrentStep(prev => prev + 1);
+            if (currentStep < TUTORIAL_STEPS.length - 1) {
+                setCurrentStep(prev => prev + 1);
+            }
         };
         const handlePrev = () => {
-            if (currentStep <= 0) return;
-            setPopoverStyle(s => ({ ...s, opacity: 0 }));
-            setCurrentStep(prev => prev - 1);
+            if (currentStep > 0) {
+                setCurrentStep(prev => prev - 1);
+            }
         };
         const handleClose = () => onClose(dontShowAgain);
 
@@ -326,11 +286,11 @@
         const step = TUTORIAL_STEPS[currentStep];
 
         return (
-            <div aria-modal="true" role="dialog" className="fixed inset-0 z-50">
+            <div aria-modal="true" role="dialog" className="fixed inset-0 z-50 pointer-events-none">
                 <div className="tutorial-highlight-box" style={highlightStyle}></div>
                 <div ref={popoverRef} className="tutorial-popover bg-white rounded-lg shadow-2xl p-5 w-[calc(100vw-40px)] max-w-sm" style={popoverStyle}>
-                    <h3 className="text-lg font-bold text-indigo-600 mb-2">{step.title}</h3>
-                    <p className="text-sm text-slate-600 mb-4">{step.content}</p>
+                    <h3 className="text-lg font-bold text-indigo-600 mb-2">{step?.title}</h3>
+                    <p className="text-sm text-slate-600 mb-4">{step?.content}</p>
                     <div className="flex justify-between items-center">
                         <div className="flex space-x-2">
                            {TUTORIAL_STEPS.map((_, index) => (
